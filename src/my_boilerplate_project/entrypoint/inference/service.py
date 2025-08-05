@@ -45,7 +45,7 @@ app = FastAPI(lifespan=lifespan)
 @app.post("/predict")
 async def predict(req: Input):
     try:
-        res = await batcher.add_to_batch(req.text)
+        res = await batcher.process(req.text)
     except asyncio.TimeoutError:
         return {"error": "Prediction timeout"}
     except Exception as e:

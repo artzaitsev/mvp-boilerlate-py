@@ -3,7 +3,7 @@ from typing import Optional, Literal
 
 
 @dataclass
-class _BaseConfig:
+class _BaseAbstractConfig:
     """
     Configuration for flexible batcher.
 
@@ -23,7 +23,7 @@ class _BaseConfig:
     max_queue_size: int = 1000
 
 @dataclass
-class SyncPoolConfig(_BaseConfig):
+class SyncPoolConfig(_BaseAbstractConfig):
     """
     Configuration for flexible batcher.
 
@@ -42,7 +42,7 @@ class SyncPoolConfig(_BaseConfig):
     inflight_per_worker: int = 3
 
 @dataclass
-class AsyncConfig(_BaseConfig):
+class AsyncConfig(_BaseAbstractConfig):
     """
     Configuration for flexible batcher.
 
