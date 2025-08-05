@@ -1,0 +1,46 @@
+[project]
+name = "mvp-boilerlate-py"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Artem Zaitsev",email = "mail@artzaitsev.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic (>=2.11.7,<3.0.0)"
+]
+
+[project.scripts]
+api = "my_boilerplate_project.entrypoint.api.service:main"
+inference = "my_boilerplate_project.entrypoint.inference.service:main"
+
+[tool.poetry]
+packages = [
+    { include = "my_boilerplate_project", from = "src" }
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.api]
+optional = true
+
+[tool.poetry.group.api.dependencies]
+fastapi = "^0.116.1"
+uvicorn = "^0.35.0"
+
+[tool.poetry.group.test]
+optional = true
+
+[tool.poetry.group.test.dependencies]
+pytest = "^6.0.0"
+pytest-mock = "*"
+
+
+[tool.poetry.group.inference.dependencies]
+bentoml = "^1.4.19"
+torch = "^2.7.1"
+transformers = "^4.54.1"
+
