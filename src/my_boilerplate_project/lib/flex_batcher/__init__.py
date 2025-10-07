@@ -7,7 +7,7 @@ __all__ = [
 ]
 
 # Import the submodules
-from .batcher import AsyncBatcher
-from .batcher import SyncPoolBatcher
-from .configs import AsyncConfig
-from .configs import SyncPoolConfig
+from .batcher_async import AsyncBatcher
+from .batcher_sync_pool import SyncPoolBatcher
+from .config import AsyncConfig
+from .config import SyncPoolConfig

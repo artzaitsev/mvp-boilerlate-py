@@ -1,64 +1,47 @@
 import asyncio
 from abc import ABC, abstractmethod
 from asyncio import Task
-from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor, Future
 
 from typing import Optional, Callable, TypeVar, Generic, Tuple, List, Awaitable, Coroutine, Any
 
-from .configs import SyncPoolConfig, AsyncConfig, _BaseConfig
+from .config import _BaseAbstractConfig
 
 OutputType = TypeVar("OutputType")
 InputType = TypeVar("InputType")
 
-class _Batcher(ABC, Generic[InputType, OutputType]):
+class _BatcherAbstract(ABC, Generic[InputType, OutputType]):
     """
-    FlexBatcher batches async requests and processes them using a thread or process pool.
+    Abstract base class for flex batcher. Don't use this directly.
     It supports:
     - Request batching with max size and latency
     - Backpressure via queue size limit
     - Non-blocking, per-request Future return
     - Timeout and error propagation
-
-    Usage:
-
-    >>> batcher = FlexBatcher[InputType, OutputType](config=Config(...))
-    >>> async def api_route(request: InputType):
-    >>>     result = await batcher.add_to_batch(request)
-
-    In background:
-
-    >>> shutdown_event = asyncio.Event()  # Define shutdown event
-    >>> def worker_fn(batch: List[InputType]) -> List[OutputType]
-    >>> batcher.run(worker_fn, shutdown_event)
-
-    Gracefully shutdown:
-
-    >>> shutdown_event.set()
-    >>> batcher.shutdown()
     """
 
-    _config: _BaseConfig
+    _config: _BaseAbstractConfig
     _semaphore: asyncio.Semaphore
     _queue: asyncio.Queue[Tuple[InputType, asyncio.Future]]
 
     def __init__(
             self,
-            config: Optional[_BaseConfig] = None
+            config: Optional[_BaseAbstractConfig] = None
     ):
         # Load default config if not provided
         if config is None:
-            config = _BaseConfig()
+            config = _BaseAbstractConfig()
         self._config = config
 
         # Semaphore limits concurrency of active batches
-        self._semaphore = asyncio.Semaphore(self._config.max_workers * self._config.inflight_per_worker)
+        # self._semaphore = asyncio.Semaphore(self._config.max_workers * self._config.inflight_per_worker)
+        self._semaphore = asyncio.Semaphore(10 * 2)
 
         # Internal request queue with overflow protection
         self._queue = asyncio.Queue(maxsize=self._config.max_queue_size)
 
     def run(
             self,
-            worker_fn: Callable[[List[InputType]], List[OutputType]],
+            worker_fn: Callable[[List[InputType]], Awaitable[List[OutputType]]],
             shutdown_event: asyncio.Event = None,
     ):
         """
@@ -110,7 +93,7 @@ class _Batcher(ABC, Generic[InputType, OutputType]):
             # Fill batch up to size or until latency timeout hits
             start = asyncio.get_running_loop().time()
             while len(batch) < self._config.max_batch_size:
-                timeout_left = self._config.max_batch_latency_ms - (asyncio.get_running_loop().time() - start)
+                timeout_left = self._config.max_batch_latency_ms / 1000 - (asyncio.get_running_loop().time() - start)
                 if timeout_left <= 0:
                     break
                 try:
@@ -152,68 +135,16 @@ class _Batcher(ABC, Generic[InputType, OutputType]):
             batch: List[InputType]
     ) -> List[OutputType]: ...
 
-    async def add_to_batch(self, data: InputType) -> OutputType:
+    async def process(self, data: InputType) -> OutputType:
         """
         Submit a request to be batched. Returns the result asynchronously.
         May raise if queue is full.
         """
         if self._queue.full():
             raise RuntimeError("Batch queue overflowed")
-
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[OutputType] = loop.create_future()
         self._queue.put_nowait((data, fut))
 
         res: OutputType = await fut
         return res
-
-
-class SyncPoolBatcher(_Batcher[InputType, OutputType]):
-    _executor: Executor
-    _config: SyncPoolConfig
-
-    def __init__(self, config: SyncPoolConfig = None) -> None:
-        super().__init__(config)
-
-        # Choose worker execution model
-        if self._config.worker_mode == "process":
-            self._executor = ProcessPoolExecutor(
-                max_workers=self._config.max_workers
-            )
-        else:
-            self._executor = ThreadPoolExecutor(
-                max_workers=self._config.max_workers,
-            )
-
-    async def _exec(
-            self,
-            worker_fn: Callable[[List[InputType]], List[OutputType]],
-            batch: List[InputType]
-    ) -> List[OutputType]:
-        loop = asyncio.get_event_loop()
-
-        return await asyncio.wait_for(
-            loop.run_in_executor(self._executor, worker_fn, batch),
-            timeout=self._config.max_timeout_ms / 1000,
-        )
-
-    def shutdown(self, wait: bool = True):
-        """
-        Cleanly shuts down the executor pool.
-        """
-        self._executor.shutdown(wait=wait)
-
-
-class AsyncBatcher(_Batcher[InputType, OutputType]):
-    def __init__(self, config: AsyncConfig = None) -> None:
-        super().__init__(config)
-
-    async def _exec(
-            self,
-            worker_fn: Callable[[List[InputType]], Awaitable[List[OutputType]]],
-            batch: List[InputType]
-    ) -> List[OutputType]:
-        return await asyncio.wait_for(
-            worker_fn(batch),
-            timeout=self._config.max_timeout_ms / 1000,
-        )
